@@ -1,0 +1,17 @@
+# Core ML and Computer Vision
+ultralytics>=8.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+pandas>=2.0.0
+matplotlib>=3.7.0
+
+# Image processing and utilities
+Pillow>=10.0.0
+scipy>=1.11.0
+
+# Optional for future hardware integration
+pyserial>=3.5
+paho-mqtt>=1.6.0
+
+# Development and debugging
+tqdm>=4.65.0
