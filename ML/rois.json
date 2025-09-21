@@ -1,0 +1,66 @@
+{
+  "rois": {
+    "North": {
+      "x1": 235,
+      "y1": 0,
+      "x2": 401,
+      "y2": 177,
+      "direction": "North",
+      "color": [
+        0,
+        255,
+        0
+      ]
+    },
+    "East": {
+      "x1": 391,
+      "y1": 151,
+      "x2": 636,
+      "y2": 337,
+      "direction": "East",
+      "color": [
+        255,
+        0,
+        0
+      ]
+    },
+    "South": {
+      "x1": 259,
+      "y1": 183,
+      "x2": 386,
+      "y2": 365,
+      "direction": "South",
+      "color": [
+        0,
+        0,
+        255
+      ]
+    },
+    "West": {
+      "x1": 1,
+      "y1": 119,
+      "x2": 299,
+      "y2": 243,
+      "direction": "West",
+      "color": [
+        255,
+        255,
+        0
+      ]
+    }
+  },
+  "directions": [
+    "North",
+    "East",
+    "South",
+    "West"
+  ],
+  "metadata": {
+    "total_rois": 4,
+    "frame_shape": [
+      360,
+      640,
+      3
+    ]
+  }
+}

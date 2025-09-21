@@ -19,7 +19,7 @@ class VehicleDetector:
     YOLOv8-based vehicle detector for traffic monitoring.
     """
     
-    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.5):
+    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.1):  # Lower for Indian traffic
         """
         Initialize the vehicle detector.
         
@@ -222,7 +222,7 @@ def main():
                        help='Path to input video file')
     parser.add_argument('--model', type=str, default='yolov8n.pt',
                        help='Path to YOLOv8 model weights')
-    parser.add_argument('--conf', type=float, default=0.5,
+    parser.add_argument('--conf', type=float, default=0.1,
                        help='Confidence threshold')
     parser.add_argument('--output', type=str, default=None,
                        help='Path to save output video')
