@@ -418,26 +418,6 @@ python ML/src/indian_traffic_controller.py --video "demo_video.mp4" --save-outpu
 - **OpenCV** community for computer vision tools
 - **Indian traffic authorities** for problem insights
 
-## 📄 **License**
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 📞 **Contact & Support**
-
-### **Project Repository**
-- **GitHub**: [SIH-2025-Drone-traffic-control-automation-mvp](https://github.com/varshithreddy7/SIH-2025-Drone-traffic-control-automation-mvp)
-- **Issues**: [Report bugs or request features](https://github.com/varshithreddy7/SIH-2025-Drone-traffic-control-automation-mvp/issues)
-
-### **Team Contact**
-- **Email**: [your-email@domain.com]
-- **LinkedIn**: [Your LinkedIn Profile]
-- **SIH Team ID**: [Your Team ID]
-
-### **Documentation**
-- **Quick Start**: [docs/quickstart.md](docs/quickstart.md)
-- **API Reference**: [docs/api_documentation.md](docs/api_documentation.md)
-- **Dataset Guide**: [docs/dataset_guide.md](docs/dataset_guide.md)
-
 ---
 
 ## 🏆 **Ready for SIH 2025!**
