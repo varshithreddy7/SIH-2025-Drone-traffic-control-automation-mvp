@@ -19,22 +19,43 @@ class ROISelector:
     Allows selection of rectangular regions for each traffic direction.
     """
     
-    def __init__(self):
-        """Initialize the ROI selector."""
-        self.directions = ['North', 'East', 'South', 'West']
-        self.colors = {
-            'North': (0, 255, 0),    # Green
-            'East': (255, 0, 0),     # Blue
-            'South': (0, 0, 255),    # Red
-            'West': (255, 255, 0)    # Cyan
-        }
-        self.rois = {}
-        self.current_direction = 0
-        self.current_roi = []
-        self.drawing = False
+    def __init__(self, video_path: str, output_path: str = "ML/rois.json"):
+        """
+        Initialize ROI selector.
+        
+        Args:
+            video_path: Path to video file
+            output_path: Path to save ROI configuration
+        """
+        self.video_path = video_path
+        self.output_path = output_path
+        self.cap = None
         self.frame = None
         self.original_frame = None
         
+        # ROI selection state
+        self.current_roi = []
+        self.rois = {}
+        self.directions = ['North', 'East', 'South', 'West']
+        self.current_direction_index = 0
+        self.is_selecting = False
+        
+        # Colors for each direction (bright and distinct)
+        self.colors = {
+            'North': (0, 255, 255),    # Bright Cyan
+            'East': (255, 0, 255),     # Bright Magenta
+            'South': (0, 255, 0),      # Bright Green
+            'West': (255, 255, 0)      # Bright Yellow
+        }
+        
+        # Moveable instruction panel settings
+        self.panel_pos = [20, 20]  # [x, y] position - can be moved
+        self.panel_size = [350, 160]  # [width, height] - compact size
+        self.panel_dragging = False
+        self.drag_offset = [0, 0]
+        
+        logger.info(f"ROI Selector initialized for video: {video_path}")
+    
     def mouse_callback(self, event, x, y, flags, param):
         """
         Mouse callback function for ROI selection.
@@ -45,18 +66,24 @@ class ROISelector:
             flags: Mouse flags
             param: Additional parameters
         """
-        if self.current_direction >= len(self.directions):
+        if self.current_direction_index >= len(self.directions):
             return
             
-        direction = self.directions[self.current_direction]
+        direction = self.directions[self.current_direction_index]
         
         if event == cv2.EVENT_LBUTTONDOWN:
             # Start drawing rectangle
-            self.drawing = True
+            self.is_selecting = True
             self.current_roi = [(x, y)]
             
+            # Check if panel is being dragged
+            if (self.panel_pos[0] < x < self.panel_pos[0] + self.panel_size[0] and
+                self.panel_pos[1] < y < self.panel_pos[1] + self.panel_size[1]):
+                self.panel_dragging = True
+                self.drag_offset = [x - self.panel_pos[0], y - self.panel_pos[1]]
+            
         elif event == cv2.EVENT_MOUSEMOVE:
-            if self.drawing:
+            if self.is_selecting:
                 # Update rectangle while drawing
                 self.frame = self.original_frame.copy()
                 self.draw_existing_rois()
@@ -68,9 +95,14 @@ class ROISelector:
                 # Add instruction text
                 self.add_instruction_text()
                 
+            elif self.panel_dragging:
+                # Move panel
+                self.panel_pos = [x - self.drag_offset[0], y - self.drag_offset[1]]
+                self.add_instruction_text()
+        
         elif event == cv2.EVENT_LBUTTONUP:
             # Finish drawing rectangle
-            self.drawing = False
+            self.is_selecting = False
             if len(self.current_roi) == 1:
                 self.current_roi.append((x, y))
                 
@@ -92,13 +124,16 @@ class ROISelector:
                 logger.info(f"ROI selected for {direction}: {roi}")
                 
                 # Move to next direction
-                self.current_direction += 1
+                self.current_direction_index += 1
                 self.current_roi = []
                 
                 # Redraw frame
                 self.frame = self.original_frame.copy()
                 self.draw_existing_rois()
                 self.add_instruction_text()
+            
+            # Stop panel dragging
+            self.panel_dragging = False
     
     def draw_existing_rois(self):
         """Draw all existing ROIs on the frame."""
@@ -112,7 +147,7 @@ class ROISelector:
                        0.7, color, 2)
     
     def add_instruction_text(self):
-        """Add instruction text to the frame."""
+        """Add instruction text overlay to the frame."""
         instructions = [
             "ROI Selection for Traffic Signal Control",
             "",
@@ -122,68 +157,110 @@ class ROISelector:
             "3. Press 'r' to reset current selection",
             "4. Press 's' to save and exit",
             "5. Press 'q' to quit without saving",
+            "6. Drag this panel to move it",
             ""
         ]
         
-        if self.current_direction < len(self.directions):
-            current_dir = self.directions[self.current_direction]
-            instructions.append(f"Current: {current_dir} ({self.current_direction + 1}/4)")
+        if self.current_direction_index < len(self.directions):
+            current_dir = self.directions[self.current_direction_index]
+            instructions.append(f"Current: {current_dir} ({self.current_direction_index + 1}/4)")
             instructions.append(f"Color: {current_dir}")
         else:
             instructions.append("All ROIs selected! Press 's' to save.")
         
-        # Add background for text
-        text_bg_height = len(instructions) * 25 + 20
-        cv2.rectangle(self.frame, (10, 10), (400, text_bg_height), (0, 0, 0), -1)
-        cv2.rectangle(self.frame, (10, 10), (400, text_bg_height), (255, 255, 255), 2)
+        # Ensure panel stays within frame bounds
+        frame_height, frame_width = self.frame.shape[:2]
+        self.panel_pos[0] = max(0, min(self.panel_pos[0], frame_width - self.panel_size[0]))
+        self.panel_pos[1] = max(0, min(self.panel_pos[1], frame_height - self.panel_size[1]))
         
-        # Add text
+        # Add semi-transparent background for better visibility
+        overlay = self.frame.copy()
+        cv2.rectangle(overlay, (self.panel_pos[0], self.panel_pos[1]), 
+                      (self.panel_pos[0] + self.panel_size[0], self.panel_pos[1] + self.panel_size[1]), 
+                      (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.8, self.frame, 0.2, 0, self.frame)
+        
+        # Add border with drag indicator
+        border_color = (0, 255, 255) if self.panel_dragging else (255, 255, 255)
+        cv2.rectangle(self.frame, (self.panel_pos[0], self.panel_pos[1]), 
+                      (self.panel_pos[0] + self.panel_size[0], self.panel_pos[1] + self.panel_size[1]), 
+                      border_color, 2)
+        
+        # Add drag handle indicator
+        cv2.rectangle(self.frame, (self.panel_pos[0] + self.panel_size[0] - 20, self.panel_pos[1]), 
+                      (self.panel_pos[0] + self.panel_size[0], self.panel_pos[1] + 20), 
+                      (100, 100, 100), -1)
+        cv2.putText(self.frame, "≡", (self.panel_pos[0] + self.panel_size[0] - 15, self.panel_pos[1] + 15), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Add text with better formatting
         for i, instruction in enumerate(instructions):
-            y_pos = 30 + i * 20
+            y_pos = self.panel_pos[1] + 20 + i * 15
             color = (255, 255, 255)
+            font_size = 0.4
+            
+            # Title formatting
+            if i == 0:
+                color = (0, 255, 255)
+                font_size = 0.5
             
             # Highlight current direction
-            if "Current:" in instruction and self.current_direction < len(self.directions):
-                color = self.colors[self.directions[self.current_direction]]
+            if "Current:" in instruction and self.current_direction_index < len(self.directions):
+                color = self.colors[self.directions[self.current_direction_index]]
+                font_size = 0.5
             
-            cv2.putText(self.frame, instruction, (15, y_pos), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            # Color indicator for current direction
+            if "Color:" in instruction and self.current_direction_index < len(self.directions):
+                color = self.colors[self.directions[self.current_direction_index]]
+                # Draw color box
+                cv2.rectangle(self.frame, 
+                             (self.panel_pos[0] + 200, y_pos - 10), 
+                             (self.panel_pos[0] + 220, y_pos + 5), 
+                             color, -1)
+                cv2.rectangle(self.frame, 
+                             (self.panel_pos[0] + 200, y_pos - 10), 
+                             (self.panel_pos[0] + 220, y_pos + 5), 
+                             (255, 255, 255), 1)
+            
+            cv2.putText(self.frame, instruction, (self.panel_pos[0] + 10, y_pos), 
+                       cv2.FONT_HERSHEY_SIMPLEX, font_size, color, 1)
+        
+        # Add progress indicator
+        progress_text = f"Progress: {len(self.rois)}/4 ROIs selected"
+        cv2.putText(self.frame, progress_text, 
+                   (self.panel_pos[0] + 10, self.panel_pos[1] + self.panel_size[1] - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
     
-    def select_rois_from_video(self, video_path, output_path="ML/rois.json"):
+    def select_rois_from_video(self):
         """
         Select ROIs from a video file.
-        
-        Args:
-            video_path (str): Path to input video
-            output_path (str): Path to save ROI configuration
         """
-        if not Path(video_path).exists():
-            logger.error(f"Video file not found: {video_path}")
+        if not Path(self.video_path).exists():
+            logger.error(f"Video file not found: {self.video_path}")
             return False
         
-        cap = cv2.VideoCapture(video_path)
-        if not cap.isOpened():
-            logger.error(f"Failed to open video: {video_path}")
+        self.cap = cv2.VideoCapture(self.video_path)
+        if not self.cap.isOpened():
+            logger.error(f"Failed to open video: {self.video_path}")
             return False
         
         # Read first frame
-        ret, frame = cap.read()
+        ret, frame = self.cap.read()
         if not ret:
             logger.error("Failed to read frame from video")
-            cap.release()
+            self.cap.release()
             return False
         
-        cap.release()
+        self.cap.release()
         
-        return self.select_rois_from_frame(frame, output_path)
+        return self.select_rois_from_frame(frame)
     
-    def select_rois_from_frame(self, frame, output_path="ML/rois.json"):
+    def select_rois_from_frame(self, frame):
         """
         Select ROIs from a single frame.
         
         Args:
             frame (np.ndarray): Input frame
-            output_path (str): Path to save ROI configuration
         """
         self.original_frame = frame.copy()
         self.frame = frame.copy()
@@ -208,9 +285,9 @@ class ROISelector:
             
             elif key == ord('r'):
                 # Reset current direction
-                if self.current_direction > 0:
-                    self.current_direction -= 1
-                    direction = self.directions[self.current_direction]
+                if self.current_direction_index > 0:
+                    self.current_direction_index -= 1
+                    direction = self.directions[self.current_direction_index]
                     if direction in self.rois:
                         del self.rois[direction]
                     logger.info(f"Reset ROI for {direction}")
@@ -223,29 +300,26 @@ class ROISelector:
             elif key == ord('s'):
                 # Save ROIs
                 if len(self.rois) == 4:
-                    success = self.save_rois(output_path)
+                    success = self.save_rois()
                     cv2.destroyAllWindows()
                     return success
                 else:
                     logger.warning(f"Only {len(self.rois)}/4 ROIs selected. Complete all selections before saving.")
             
             # Auto-save when all ROIs are selected
-            if len(self.rois) == 4 and self.current_direction >= len(self.directions):
+            if len(self.rois) == 4 and self.current_direction_index >= len(self.directions):
                 logger.info("All ROIs selected. Press 's' to save or 'r' to reset last ROI.")
     
-    def save_rois(self, output_path):
+    def save_rois(self):
         """
         Save ROIs to JSON file.
         
-        Args:
-            output_path (str): Path to save ROI configuration
-            
         Returns:
             bool: Success status
         """
         try:
             # Ensure output directory exists
-            output_dir = Path(output_path).parent
+            output_dir = Path(self.output_path).parent
             output_dir.mkdir(parents=True, exist_ok=True)
             
             # Prepare data for JSON serialization
@@ -259,10 +333,10 @@ class ROISelector:
             }
             
             # Save to JSON
-            with open(output_path, 'w') as f:
+            with open(self.output_path, 'w') as f:
                 json.dump(roi_data, f, indent=2)
             
-            logger.info(f"ROIs saved successfully to {output_path}")
+            logger.info(f"ROIs saved successfully to {self.output_path}")
             logger.info(f"Saved {len(self.rois)} ROIs: {list(self.rois.keys())}")
             
             return True
@@ -311,10 +385,10 @@ def main():
     args = parser.parse_args()
     
     # Create ROI selector
-    selector = ROISelector()
+    selector = ROISelector(args.video, args.output)
     
     # Select ROIs from video
-    success = selector.select_rois_from_video(args.video, args.output)
+    success = selector.select_rois_from_video()
     
     if success:
         logger.info("ROI selection completed successfully!")

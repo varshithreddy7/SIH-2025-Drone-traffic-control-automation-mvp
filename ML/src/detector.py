@@ -1,6 +1,6 @@
 """
-YOLOv8-based vehicle detection module for traffic signal automation.
-Handles video input, runs inference, and displays annotated results.
+Custom Traffic Vehicle Detection Module for Traffic Signal Automation.
+Uses pre-trained PyTorch model specifically trained on traffic data.
 """
 
 import cv2
@@ -16,77 +16,105 @@ logger = logging.getLogger(__name__)
 
 class VehicleDetector:
     """
-    YOLOv8-based vehicle detector for traffic monitoring.
+    Custom traffic vehicle detector using pre-trained traffic model.
     """
     
-    def __init__(self, model_path="yolov8n.pt", conf_threshold=0.1):  # Lower for Indian traffic
+    def __init__(self, model_path="Model/model.pt", conf_threshold=0.25):  # Higher confidence for custom model
         """
-        Initialize the vehicle detector.
+        Initialize the vehicle detector with custom traffic model.
         
         Args:
-            model_path (str): Path to YOLOv8 model weights
+            model_path (str): Path to custom PyTorch model weights (default: Model/model.pt)
             conf_threshold (float): Confidence threshold for detections
         """
         self.model_path = model_path
         self.conf_threshold = conf_threshold
         self.model = None
-        self.vehicle_classes = [2, 3, 5, 7]  # car, motorcycle, bus, truck in COCO dataset
+        
+        # Custom model is trained specifically for traffic vehicles
+        # All detections from this model are vehicles, so no class filtering needed
+        self.is_custom_traffic_model = True
         
         # Performance tracking
         self.fps_counter = 0
         self.fps_start_time = time.time()
         self.current_fps = 0
         
+        logger.info(f"🚗 Initialized Custom Traffic Vehicle Detector")
+        logger.info(f"📁 Model Path: {self.model_path}")
+        logger.info(f"🎯 Confidence Threshold: {self.conf_threshold}")
+        
     def load_model(self):
-        """Load YOLOv8 model."""
+        """Load custom traffic-trained PyTorch model."""
         try:
-            logger.info(f"Loading YOLOv8 model: {self.model_path}")
+            model_full_path = Path(self.model_path)
+            if not model_full_path.exists():
+                logger.error(f"❌ Custom model not found: {self.model_path}")
+                raise FileNotFoundError(f"Model file not found: {self.model_path}")
+            
+            logger.info(f"🧠 Loading Custom Traffic Model: {self.model_path}")
+            logger.info(f"📊 Model Size: {model_full_path.stat().st_size / (1024*1024):.1f} MB")
+            
             self.model = YOLO(self.model_path)
-            logger.info("Model loaded successfully")
+            
+            logger.info("✅ Custom Traffic Model loaded successfully!")
+            logger.info("🚗 Model is specifically trained for traffic vehicle detection")
+            
         except Exception as e:
-            logger.error(f"Failed to load model: {e}")
+            logger.error(f"❌ Failed to load custom model: {e}")
+            logger.error("💡 Make sure Model/model.pt exists and is a valid YOLO model")
             raise
     
     def detect_vehicles(self, frame):
         """
-        Detect vehicles in a frame.
+        Detect vehicles in a frame using custom traffic model.
         
         Args:
             frame (np.ndarray): Input frame
             
         Returns:
-            tuple: (detections, annotated_frame)
+            list: List of vehicle detections with enhanced information
         """
         if self.model is None:
             self.load_model()
         
-        # Run inference
+        # Run inference with custom model
         results = self.model(frame, conf=self.conf_threshold, verbose=False)
         
-        # Filter for vehicle classes only
+        # Process detections from custom traffic model
         vehicle_detections = []
         for result in results:
             boxes = result.boxes
             if boxes is not None:
-                for i, cls in enumerate(boxes.cls):
-                    if int(cls) in self.vehicle_classes:
-                        box = boxes.xyxy[i].cpu().numpy()
-                        conf = boxes.conf[i].cpu().numpy()
-                        vehicle_detections.append({
-                            'bbox': box,
-                            'confidence': conf,
-                            'class': int(cls),
-                            'centroid': ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
-                        })
+                for i in range(len(boxes)):
+                    box = boxes.xyxy[i].cpu().numpy()
+                    conf = boxes.conf[i].cpu().numpy()
+                    
+                    # Get class if available, otherwise assume vehicle
+                    cls = int(boxes.cls[i].cpu().numpy()) if boxes.cls is not None else 0
+                    
+                    # Calculate centroid for ROI intersection
+                    centroid_x = (box[0] + box[2]) / 2
+                    centroid_y = (box[1] + box[3]) / 2
+                    
+                    # Calculate area for size analysis
+                    area = (box[2] - box[0]) * (box[3] - box[1])
+                    
+                    vehicle_detections.append({
+                        'bbox': box,
+                        'confidence': float(conf),
+                        'class': cls,
+                        'centroid': (centroid_x, centroid_y),
+                        'area': area,
+                        'width': box[2] - box[0],
+                        'height': box[3] - box[1]
+                    })
         
-        # Create annotated frame
-        annotated_frame = self.annotate_frame(frame.copy(), vehicle_detections)
-        
-        return vehicle_detections, annotated_frame
+        return vehicle_detections
     
-    def annotate_frame(self, frame, detections):
+    def draw_detections(self, frame, detections):
         """
-        Annotate frame with detection results.
+        Draw detection results on frame with enhanced visualization.
         
         Args:
             frame (np.ndarray): Input frame
@@ -95,40 +123,72 @@ class VehicleDetector:
         Returns:
             np.ndarray: Annotated frame
         """
-        class_names = {2: 'car', 3: 'motorcycle', 5: 'bus', 7: 'truck'}
-        colors = {2: (0, 255, 0), 3: (255, 0, 0), 5: (0, 0, 255), 7: (255, 255, 0)}
+        annotated_frame = frame.copy()
         
-        for det in detections:
+        # Enhanced colors for better visibility
+        colors = [
+            (0, 255, 255),    # Bright Cyan
+            (255, 0, 255),    # Bright Magenta  
+            (0, 255, 0),      # Bright Green
+            (255, 255, 0),    # Bright Yellow
+            (255, 128, 0),    # Orange
+            (128, 255, 0),    # Lime
+            (255, 0, 128),    # Pink
+            (0, 128, 255)     # Light Blue
+        ]
+        
+        for i, det in enumerate(detections):
             bbox = det['bbox'].astype(int)
             conf = det['confidence']
-            cls = det['class']
             centroid = det['centroid']
             
-            # Draw bounding box
-            color = colors.get(cls, (255, 255, 255))
-            cv2.rectangle(frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 2)
+            # Use cycling colors for better distinction
+            color = colors[i % len(colors)]
             
-            # Draw centroid
-            cv2.circle(frame, (int(centroid[0]), int(centroid[1])), 5, color, -1)
+            # Draw bounding box with thick border
+            cv2.rectangle(annotated_frame, (bbox[0], bbox[1]), (bbox[2], bbox[3]), color, 3)
             
-            # Draw label
-            label = f"{class_names.get(cls, 'vehicle')}: {conf:.2f}"
-            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-            cv2.rectangle(frame, (bbox[0], bbox[1] - label_size[1] - 10), 
-                         (bbox[0] + label_size[0], bbox[1]), color, -1)
-            cv2.putText(frame, label, (bbox[0], bbox[1] - 5), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+            # Draw centroid with larger circle
+            cv2.circle(annotated_frame, (int(centroid[0]), int(centroid[1])), 8, color, -1)
+            cv2.circle(annotated_frame, (int(centroid[0]), int(centroid[1])), 8, (255, 255, 255), 2)
+            
+            # Enhanced label with confidence
+            label = f"Vehicle: {conf:.2f}"
+            label_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+            
+            # Label background
+            cv2.rectangle(annotated_frame, (bbox[0], bbox[1] - label_size[1] - 15), 
+                         (bbox[0] + label_size[0] + 10, bbox[1]), color, -1)
+            
+            # Label text
+            cv2.putText(annotated_frame, label, (bbox[0] + 5, bbox[1] - 8), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 0), 2)
         
-        # Add FPS counter
+        # Add performance info
         self.update_fps()
-        cv2.putText(frame, f"FPS: {self.current_fps:.1f}", (10, 30), 
+        
+        # FPS counter with background
+        fps_text = f"FPS: {self.current_fps:.1f}"
+        fps_size = cv2.getTextSize(fps_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        cv2.rectangle(annotated_frame, (10, 10), (20 + fps_size[0], 40), (0, 0, 0), -1)
+        cv2.putText(annotated_frame, fps_text, (15, 35), 
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        # Add detection count
-        cv2.putText(frame, f"Vehicles: {len(detections)}", (10, 70), 
+        # Detection count with background
+        count_text = f"Vehicles: {len(detections)}"
+        count_size = cv2.getTextSize(count_text, cv2.FONT_HERSHEY_SIMPLEX, 1, 2)[0]
+        cv2.rectangle(annotated_frame, (10, 50), (20 + count_size[0], 80), (0, 0, 0), -1)
+        cv2.putText(annotated_frame, count_text, (15, 75), 
                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
         
-        return frame
+        # Model info
+        model_text = "Custom Traffic Model"
+        model_size = cv2.getTextSize(model_text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2)[0]
+        cv2.rectangle(annotated_frame, (10, 90), (20 + model_size[0], 115), (0, 0, 0), -1)
+        cv2.putText(annotated_frame, model_text, (15, 110), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        
+        return annotated_frame
     
     def update_fps(self):
         """Update FPS counter."""
@@ -181,7 +241,10 @@ class VehicleDetector:
                 frame_count += 1
                 
                 # Detect vehicles
-                detections, annotated_frame = self.detect_vehicles(frame)
+                detections = self.detect_vehicles(frame)
+                
+                # Draw detections
+                annotated_frame = self.draw_detections(frame, detections)
                 
                 # Save frame if writer is available
                 if writer:
@@ -220,9 +283,9 @@ def main():
     parser = argparse.ArgumentParser(description='YOLOv8 Vehicle Detector')
     parser.add_argument('--video', type=str, default='data/videos/sample.mp4',
                        help='Path to input video file')
-    parser.add_argument('--model', type=str, default='yolov8n.pt',
-                       help='Path to YOLOv8 model weights')
-    parser.add_argument('--conf', type=float, default=0.1,
+    parser.add_argument('--model', type=str, default='Model/model.pt',
+                       help='Path to custom PyTorch model weights')
+    parser.add_argument('--conf', type=float, default=0.25,
                        help='Confidence threshold')
     parser.add_argument('--output', type=str, default=None,
                        help='Path to save output video')
